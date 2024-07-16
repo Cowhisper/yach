@@ -1,12 +1,13 @@
 import sys
 import copy
 import inspect
+from functools import wraps
 
 
-class XCfgNode(dict):
+class Node(dict):
     def __init__(self, init_dict=None, freeze=False):
         init_dict = {} if init_dict is None else init_dict
-        super(XCfgNode, self).__init__(init_dict)
+        super(Node, self).__init__(init_dict)
         self.__dict__['__immutable__'] = freeze
 
     def is_frozen(self):
@@ -15,7 +16,7 @@ class XCfgNode(dict):
     def freeze(self, freeze=True):
         self.__dict__['__immutable__'] = freeze
         for v in self.__dict__.values():
-            if isinstance(v, XCfgNode):
+            if isinstance(v, Node):
                 v.freeze(freeze)
 
     def __getattr__(self, key):
@@ -51,7 +52,7 @@ class XCfgNode(dict):
             if not self.has(node_key):
                 self.register(node_key)
             node = self.get(node_key)
-            if isinstance(node, XCfgNode):
+            if isinstance(node, Node):
                 node[ks[-1]] = value
             else:
                 raise AttributeError(f"{node_key} is not a XCfgNode")
@@ -64,7 +65,7 @@ class XCfgNode(dict):
         else:
             if ks[0] not in self:
                 return False
-            if isinstance(self[ks[0]], XCfgNode):
+            if isinstance(self[ks[0]], Node):
                 return self[ks[0]].has('.'.join(ks[1:]))
             else:
                 return False
@@ -77,23 +78,25 @@ class XCfgNode(dict):
         ks = key.split('.')
         if len(ks) > 1:
             if ks[0] not in self:
-                self[ks[0]] = XCfgNode()
-            if isinstance(self[ks[0]], XCfgNode):
+                self[ks[0]] = Node()
+            if isinstance(self[ks[0]], Node):
                 self[ks[0]].register('.'.join(ks[1:]))
             else:
                 raise AttributeError(f'{ks[0]} is not a XCfgNode')
         else:
-            self[key] = XCfgNode()
+            self[key] = Node()
 
     def clone(self):
         return copy.deepcopy(self)
 
-    def pprint(self):
+    def pprint(self, skip_prefix='_'):
         # print in yaml format
         def _recursive(cfg, indent=0):
             s = ''
             for k, v in cfg.items():
-                if isinstance(v, XCfgNode):
+                if k.startswith(skip_prefix):
+                    continue
+                if isinstance(v, Node):
                     s += ' ' * indent + k + ':\n'
                     s += _recursive(v, indent + 2)
                 else:
@@ -108,37 +111,69 @@ class XCfgNode(dict):
         if len(ks) == 1:
             del self[ks[0]]
         else:
-            if isinstance(self[ks[0]], XCfgNode):
+            if isinstance(self[ks[0]], Node):
                 self[ks[0]].delete('.'.join(ks[1:]))
             else:
                 raise AttributeError(f'{ks[0]} is not a XCfgNode')
 
-CFG = XCfgNode()
+
+_C = Node()
+_C._configurables = Node()
 
 
-def configurable(scope=None):
-    def _configurable(func):
-        def wrapper(*args, **kwargs):
-            signature = inspect.signature(func)
-            for name, param in signature.parameters.items():
-                if isinstance(param.annotation, str):
-                    if scope is not None and param.annotation.startswith('.'):
-                        annotation = scope + param.annotation
-                    else:
-                        annotation = param.annotation
-                    if name not in kwargs:
-                        kwargs[name] = CFG.get(annotation)
+class configurable:
+    UNDBIND = '_'
+    def __init__(self, scope=None):
+        self.scope = scope
+        
+    def do_register(self, func):
+        scope = self.scope
+        signature = inspect.signature(func)
+        cls_name = func.__qualname__.split('.')[0]
+        kwargs = {}
+        for name, param in signature.parameters.items():
+            if isinstance(param.annotation, str):
+                if param.annotation.startswith('.'):
+                    annotation = param.annotation[1:]
                 else:
-                    annotation = scope + '.' + name if scope is not None else name
-                    if name not in kwargs:
-                        kwargs[name] = CFG.get(annotation)
+                    annotation = param.annotation
+            else:
+                annotation = name
+            if scope is not None:
+                annotation = scope + '.' + annotation
+            kwargs[name] = annotation
+        _C._configurables[cls_name] = Node(kwargs, freeze=True)
+
+    def register(self, func):
+        self.do_register(func)
+        cls_name = func.__qualname__.split('.')[0]
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            kwargs_default = _C._configurables[cls_name].clone()
+            kwargs_default.update(kwargs)
+            for k, v in kwargs_default.items():
+                kwargs[k] = _C.get(v)
             return func(*args, **kwargs)
         return wrapper
-    return _configurable
 
+    def __call__(self, func):
+        func = func.__wrapped__
+        cls_name = func.__qualname__.split('.')[0]
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            kwargs_default = _C._configurables[cls_name].clone()
+            kwargs_default.update(kwargs)
+            for k, v in kwargs_default.items():
+                vs = v.split('.')
+                if vs[0] == configurable.UNDBIND:
+                    vs[0] = self.scope
+                v = '.'.join(vs)
+                kwargs[k] = _C.get(v)
+            return func(*args, **kwargs)
+        return wrapper
 
 def merge_from_sys_argv(cfg=None):
-    cfg = CFG if cfg is None else cfg
+    cfg = _C if cfg is None else cfg
     for arg in sys.argv[1:]:
         if '=' in arg:
             k, v = arg.split('=')

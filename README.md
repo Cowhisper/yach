@@ -37,18 +37,39 @@ model = Model.from_config(cfg)
 YACH is offers a more convenient way
 ```python
 # Option 3, use yach!
-from yach import configurable
+import torch
+from yach import configurable, _C
 
+# register module with specific scope
 
-@configurable()
-class Model(torch.nn.Module):
+_C.register('Model1')
+_C.Model1.input_channels = 1
+_C.Model1.output_channels = 2
+
+@configurable().register  # equal  @configurable('Model1').register
+class Model1(torch.nn.Module):
     def __init__(self, input_channels, output_channels):
+        super().__init__()
         self.net = torch.nn.Linear(input_channels, output_channels)
 
+model = Model1()
 
-model = Model()
+# register module with unbind prefix
+_C.register('Model1')
+_C.l1.input_channels = 1
+_C.l1.output_channels = 2
+_C.l2.input_channels = 3
+_C.l2.output_channels = 4
+
+@configurable(configurable.UNBIND).register
+class Model2(torch.nn.Module):
+    def __init__(self, input_channels, output_channels):
+        super().__init__()
+        self.net = torch.nn.Linear(input_channels, output_channels)
+
+model1 = configurable('l1')(Model2)()
+model2 = configurable('l2')(Model2)()
+
+# you can overwrite augments by passing a new value
+model1 = configurable('l1')(Model2)(output_channels=100)
 ```
-
-
-## How is it work?
-YACH maintains a gobal CfgNode in `yach.config`.

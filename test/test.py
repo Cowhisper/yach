@@ -2,13 +2,14 @@ import pytest
 import sys
 sys.path.append('.')
 print(sys.path)
-from yach.config import XCfgNode, configurable, CFG, merge_from_sys_argv
+from yach.config import Node, configurable, merge_from_sys_argv
+from yach.config import _C as CFG
 
 
 # write pytest test case of XCfgNode
 
 def test_xcfgnode():
-    node = XCfgNode({'a': 1})
+    node = Node({'a': 1})
     assert node.get('a') == 1
     
     node.set('b', 2)
@@ -28,7 +29,7 @@ def test_xcfgnode():
     assert node.has('a') is False
 
     node.register('a.b.c')
-    assert isinstance(node.get('a.b.c'), XCfgNode)
+    assert isinstance(node.get('a.b.c'), Node)
 
     node_new = node.clone()
     assert node_new == node
@@ -43,9 +44,29 @@ a:
     assert text.strip() == result
 
 
-@configurable()
-class ExampleClass1:
+@configurable(configurable.UNDBIND).register
+class ExampleClass1(object):
     def __init__(self, a, b):
+        super().__init__()
+        self.a = a
+        self.b = b
+
+    @property
+    def c(self):
+        return self.a + self.b
+    
+    @staticmethod
+    def d():
+        return 1
+    
+    def __call__(self, c):
+        return self.a + self.b + c
+    
+
+@configurable('model_2').register
+class ExampleClass2(object):
+    def __init__(self, a, b):
+        super().__init__()
         self.a = a
         self.b = b
 
@@ -60,10 +81,27 @@ class ExampleClass1:
     def __call__(self, c):
         return self.a + self.b + c
 
+
+def test_configurable_unbind():
+    CFG.register('model_1')
+    CFG.model_1.a = 1
+    CFG.model_1.b = 2
+    ec = configurable('model_1')(ExampleClass1)()
+    assert ec.__class__.__name__ == 'ExampleClass1'
+    assert ec.a == 1
+    assert ec.b == 2
+    assert ec.c == 3
+    assert ec.d() == 1
+    # assert ExampleClass1.d() == 1
+    assert ec(3) == 6
+
+
 def test_configurable():
-    CFG.a = 1
-    CFG.b = 2
-    ec = ExampleClass1()
+    CFG.register('model_2')
+    CFG.model_2.a = 1
+    CFG.model_2.b = 2
+    ec = ExampleClass2()
+    assert ec.__class__.__name__ == 'ExampleClass2'
     assert ec.a == 1
     assert ec.b == 2
     assert ec.c == 3
