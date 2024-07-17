@@ -38,7 +38,7 @@ YACH is offers a more convenient way
 ```python
 # Option 3, use yach!
 import torch
-from yach import configurable, _C
+from yach import configurable, _C, Node
 
 # ----------------------------------------------------------------
 
@@ -84,6 +84,7 @@ model1 = configurable('l1')(Model2)(3, output_channels=1024)
 ```
 
 ## Example
+write a `config.yaml` for training.
 ```yaml
 train:
     epoch: 10
@@ -114,11 +115,11 @@ SGD:
 
 ```
 
-
+Training script
 ```python
 import torch
 from torchvision.models import resnet50
-from yach import configurable
+from yach import configurable, _C
 
 # register module
 configurable('torchvision.resnet50').register(resnet50)
@@ -148,4 +149,18 @@ def train(
 
     for i in range(epoch):
         ...
+
+
+if __name__ == '__main__':
+    import yaml
+
+    with open("config.yaml") as stream:
+        cfg_json = yaml.safe_load(stream)
+        cfg = Node(cfg_json)
+    _C.update(cfg)
+
+    # print global config
+    print(_C.pprint())
+
+    train()
 ```
