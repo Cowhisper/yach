@@ -23,13 +23,19 @@ def test_xcfgnode():
 
     node.freeze(False)
     with pytest.raises(AttributeError):
-        node.set('a.b.c', 3)
+        node.set('a.b.c', 3, True)
+
+    with pytest.raises(AttributeError):
+        node.set('x.y', 3, False)
 
     node.delete('a')
     assert node.has('a') is False
 
     node.register('a.b.c')
     assert isinstance(node.get('a.b.c'), Node)
+
+    node.set('q.p.r', 2, True)
+    assert node.q.p.r == 2
 
     node_new = node.clone()
     assert node_new == node
@@ -40,6 +46,9 @@ b: 2
 a:
   b:
     c:
+q:
+  p:
+    r: 2
 """.strip()
     assert text.strip() == result
 
@@ -80,6 +89,25 @@ class ExampleClass2(object):
     
     def __call__(self, c):
         return self.a + self.b + c
+    
+
+@configurable().register
+class ExampleClass3(object):
+    def __init__(self, a, b):
+        super().__init__()
+        self.a = a
+        self.b = b
+
+    @property
+    def c(self):
+        return self.a + self.b
+    
+    @staticmethod
+    def d():
+        return 1
+    
+    def __call__(self, c):
+        return self.a + self.b + c
 
 
 def test_configurable_unbind():
@@ -92,7 +120,7 @@ def test_configurable_unbind():
     assert ec.b == 2
     assert ec.c == 3
     assert ec.d() == 1
-    # assert ExampleClass1.d() == 1
+    assert ExampleClass1.d() == 1
     assert ec(3) == 6
 
 
@@ -106,7 +134,7 @@ def test_configurable():
     assert ec.b == 2
     assert ec.c == 3
     assert ec.d() == 1
-    # assert ExampleClass1.d() == 1
+    assert ExampleClass2.d() == 1
     assert ec(3) == 6
 
 
@@ -118,3 +146,16 @@ def test_merge_from_sys_argv():
     assert CFG.a == 1
     assert CFG.b == 'test'
     assert CFG.c is True
+
+
+def test_build():
+    CFG.register('model_2')
+    CFG.model_2.a = 1
+    CFG.model_2.b = 2
+    ec = configurable()(ExampleClass2)()
+    ec = configurable()('ExampleClass2')()
+    CFG.register('ExampleClass3')
+    CFG.ExampleClass3.a = 1
+    CFG.ExampleClass3.b = 2
+    ec = ExampleClass3()
+    ec = ExampleClass3(3, b=4)

@@ -40,11 +40,13 @@ YACH is offers a more convenient way
 import torch
 from yach import configurable, _C
 
-# register module with specific scope
+# ----------------------------------------------------------------
 
 _C.register('Model1')
 _C.Model1.input_channels = 1
 _C.Model1.output_channels = 2
+
+# register module with specific scope
 
 @configurable().register  # equal  @configurable('Model1').register
 class Model1(torch.nn.Module):
@@ -54,22 +56,96 @@ class Model1(torch.nn.Module):
 
 model = Model1()
 
-# register module with unbind prefix
-_C.register('Model1')
+# ----------------------------------------------------------------
+
+_C.register('l1')
+_C.register('l2')
 _C.l1.input_channels = 1
 _C.l1.output_channels = 2
 _C.l2.input_channels = 3
 _C.l2.output_channels = 4
 
+# register module with unbind prefix
+
 @configurable(configurable.UNBIND).register
 class Model2(torch.nn.Module):
-    def __init__(self, input_channels, output_channels):
+    def __init__(self, input_channels, output_channels=10):
         super().__init__()
         self.net = torch.nn.Linear(input_channels, output_channels)
 
-model1 = configurable('l1')(Model2)()
-model2 = configurable('l2')(Model2)()
+# use configurable to bind scope 'l1' and 'l2' to Model2 class separately
 
-# you can overwrite augments by passing a new value
-model1 = configurable('l1')(Model2)(output_channels=100)
+model1 = configurable('l1')(Model2)()
+model2 = configurable('l2')('Model2')() # both class and class name would work
+
+# you can overwrite augments by passing args or kwargs
+# augments priority args/kwargs > bind node > default value
+model1 = configurable('l1')(Model2)(3, output_channels=1024)
+```
+
+## Example
+```yaml
+train:
+    epoch: 10
+    lr: 0.01
+    scheduler: 'ExponentialLR'
+    optimizer: 'SGD'
+    dataset: 'TrainDataset'
+    model: 'torchvision.resnet50'
+
+TrainDataset:
+    data_files:
+        - a.txt
+        - b.txt
+    mean: [0.5, 0.5, 0.5]
+    std: [0.5, 0.5, 0.5]
+
+torchvision:
+    resnet50:
+        num_classes:
+        zero_init_residual: false
+
+
+ExponentialLR:
+    gamma: 0.9
+
+SGD:
+    momentum: 0.9
+
+```
+
+
+```python
+import torch
+from torchvision.models import resnet50
+from yach import configurable
+
+# register module
+configurable('torchvision.resnet50').register(resnet50)
+configurable('ExponentialLR').register(torch.optim.lr_scheduler.ExponentialLR)
+configurable('SGD').register(torch.optim.SGD)
+
+@configurable().register
+class TrainDataset(torch.utils.data.Dataset):
+    def __init__(self, data_files, mean, std):
+        super().__init__()
+        pass
+
+
+@configurable().register
+def train(
+    epoch,
+    lr,
+    scheduler,
+    optimizer,
+    dataset,
+    model,
+):
+    dataset = configurable()(dataset)()
+    model = configurable()(model)(num_classes=dataset.num_classes)
+    opt = configurable()(optimizer)(model.parameters(), lr=lr)
+    sch = configurable()(scheduler)(optimizer)
+
+    for i in range(epoch):
+        ...
 ```

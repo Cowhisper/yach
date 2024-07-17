@@ -20,53 +20,53 @@ class Node(dict):
                 v.freeze(freeze)
 
     def __getattr__(self, key):
-        if key in self:
-            return self.get(key)
-        else:
-            raise AttributeError(
-                "No such attribute '{}' in config node".format(key)
-            )
+        return self.get(key)
 
     def __setattr__(self, key, value):
         self.set(key, value)
 
     def get(self, key):
-        ks = key.split('.')
-        if len(ks) == 1:
-            return self[ks[0]]
+        if not self.has(key):
+            raise AttributeError(
+                "No such attribute '{}' in config node".format(key)
+            )
+        ksegments = key.split('.')
+        if len(ksegments) == 1:
+            return self[ksegments[0]]
         else:
-            k_suf = '.'.join(ks[1:])
-            return self[ks[0]].get(k_suf)
+            k_suffix = '.'.join(ksegments[1:])
+            return self[ksegments[0]].get(k_suffix)
 
-    def set(self, key, value):
+    def set(self, key, value, do_register=True):
         if self.is_frozen():
             raise AttributeError(
                 "Attempted to modify on a frozen config node"
             )
-        ks = key.split('.')
-        if len(ks) == 1:
-            self[ks[0]] = value
+        ksegments = key.split('.')
+        if len(ksegments) == 1:
+            self[ksegments[0]] = value
             return
         else:
-            node_key = '.'.join(ks[:-1])
-            if not self.has(node_key):
-                self.register(node_key)
-            node = self.get(node_key)
+            key_prefix = '.'.join(ksegments[:-1])
+            if not self.has(key_prefix) and do_register:
+                self.register(key_prefix)
+            node = self.get(key_prefix)
             if isinstance(node, Node):
-                node[ks[-1]] = value
+                node[ksegments[-1]] = value
             else:
-                raise AttributeError(f"{node_key} is not a XCfgNode")
+                raise AttributeError(f"{key_prefix} is not a Node")
             return
 
     def has(self, key):
-        ks = key.split('.')
-        if len(ks) == 1:
-            return ks[0] in self
+        ksegments = key.split('.')
+        if len(ksegments) == 1:
+            return ksegments[0] in self
         else:
-            if ks[0] not in self:
+            if ksegments[0] not in self:
                 return False
-            if isinstance(self[ks[0]], Node):
-                return self[ks[0]].has('.'.join(ks[1:]))
+            if isinstance(self[ksegments[0]], Node):
+                k_suffix = '.'.join(ksegments[1:])
+                return self[ksegments[0]].has(k_suffix)
             else:
                 return False
 
@@ -75,14 +75,14 @@ class Node(dict):
             raise AttributeError(
                 "Attempted to modify on a frozen config node"
             )
-        ks = key.split('.')
-        if len(ks) > 1:
-            if ks[0] not in self:
-                self[ks[0]] = Node()
-            if isinstance(self[ks[0]], Node):
-                self[ks[0]].register('.'.join(ks[1:]))
+        ksegments = key.split('.')
+        if len(ksegments) > 1:
+            if ksegments[0] not in self:
+                self[ksegments[0]] = Node()
+            if isinstance(self[ksegments[0]], Node):
+                self[ksegments[0]].register('.'.join(ksegments[1:]))
             else:
-                raise AttributeError(f'{ks[0]} is not a XCfgNode')
+                raise AttributeError(f'{ksegments[0]} is not a Node')
         else:
             self[key] = Node()
 
@@ -105,20 +105,21 @@ class Node(dict):
         return _recursive(self)
 
     def delete(self, key):
-        ks = key.split('.')
-        if ks[0] not in self:
-            raise AttributeError(f'{ks[0]} does not exist')
-        if len(ks) == 1:
-            del self[ks[0]]
+        ksegments = key.split('.')
+        if ksegments[0] not in self:
+            raise AttributeError(f'{ksegments[0]} does not exist')
+        if len(ksegments) == 1:
+            del self[ksegments[0]]
         else:
-            if isinstance(self[ks[0]], Node):
-                self[ks[0]].delete('.'.join(ks[1:]))
+            if isinstance(self[ksegments[0]], Node):
+                self[ksegments[0]].delete('.'.join(ksegments[1:]))
             else:
-                raise AttributeError(f'{ks[0]} is not a XCfgNode')
+                raise AttributeError(f'{ksegments[0]} is not a Node')
 
 
 _C = Node()
 _C._configurables = Node()
+_C._registry = Node()
 
 
 class configurable:
@@ -130,7 +131,10 @@ class configurable:
         scope = self.scope
         signature = inspect.signature(func)
         cls_name = func.__qualname__.split('.')[0]
+        
         kwargs = {}
+        defaultv = {}
+        args = []
         for name, param in signature.parameters.items():
             if isinstance(param.annotation, str):
                 if param.annotation.startswith('.'):
@@ -142,35 +146,89 @@ class configurable:
             if scope is not None:
                 annotation = scope + '.' + annotation
             kwargs[name] = annotation
-        _C._configurables[cls_name] = Node(kwargs, freeze=True)
+            defaultv[name] = param.default
+            args.append(name)
+
+        _C._configurables[cls_name] = Node(
+            {
+                'kwargs': kwargs,
+                'defaultv': defaultv,
+                'args': args
+            }
+            , freeze=True)
+        _C._registry[cls_name] = func
 
     def register(self, func):
+        cls_name = func.__qualname__.split('.')[0]
+        if self.scope is None:
+            self.scope = cls_name
         self.do_register(func)
-        cls_name = func.__qualname__.split('.')[0]
+        
         @wraps(func)
         def wrapper(*args, **kwargs):
-            kwargs_default = _C._configurables[cls_name].clone()
-            kwargs_default.update(kwargs)
-            for k, v in kwargs_default.items():
-                kwargs[k] = _C.get(v)
-            return func(*args, **kwargs)
-        return wrapper
+            func_info = _C._configurables[cls_name].clone()
+            default_kwargs = func_info['kwargs']
+            default_values = func_info['defaultv']
+            args_names = func_info['args']
 
-    def __call__(self, func):
-        func = func.__wrapped__
-        cls_name = func.__qualname__.split('.')[0]
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            kwargs_default = _C._configurables[cls_name].clone()
-            kwargs_default.update(kwargs)
-            for k, v in kwargs_default.items():
+            for k, v in zip(args_names, args):
+                kwargs[k] = v
+
+            dkwargs = {}
+            for k, v in default_kwargs.items():
                 vs = v.split('.')
                 if vs[0] == configurable.UNDBIND:
                     vs[0] = self.scope
                 v = '.'.join(vs)
-                kwargs[k] = _C.get(v)
-            return func(*args, **kwargs)
+                if _C.has(v):
+                    dkwargs[k] = _C.get(v)
+                elif default_values[k] != inspect._empty:
+                    dkwargs[k] = default_values[k]
+                else:
+                    # do nothing, let func call raise Error
+                    pass
+            dkwargs.update(kwargs)
+            return func(**dkwargs)
         return wrapper
+
+    def __call__(self, func):
+        if isinstance(func, str):
+            if func not in _C._registry:
+                raise KeyError(f'Unregist module name: {func}.')
+            func = _C._registry[func]
+        if '__wrapped__' in func.__dict__:
+            func = func.__wrapped__
+        cls_name = func.__qualname__.split('.')[0]
+        if self.scope is None:
+            self.scope = cls_name
+            
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            func_info = _C._configurables[cls_name].clone()
+            default_kwargs = func_info['kwargs']
+            default_values = func_info['defaultv']
+            args_names = func_info['args']
+
+            for k, v in zip(args_names, args):
+                kwargs[k] = v
+
+            dkwargs = {}
+            for k, v in default_kwargs.items():
+                vs = v.split('.')
+                if vs[0] == configurable.UNDBIND:
+                    vs[0] = self.scope
+                v = '.'.join(vs)
+                if _C.has(v):
+                    dkwargs[k] = _C.get(v)
+                elif default_values[k] != inspect._empty:
+                    dkwargs[k] = default_values[k]
+                else:
+                    # do nothing, let func call raise Error
+                    pass
+            dkwargs.update(kwargs)
+            return func(**dkwargs)
+        return wrapper
+
 
 def merge_from_sys_argv(cfg=None):
     cfg = _C if cfg is None else cfg
@@ -182,4 +240,3 @@ def merge_from_sys_argv(cfg=None):
             except:
                 pass
             cfg[k] = v
-
