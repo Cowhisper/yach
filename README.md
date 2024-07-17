@@ -38,7 +38,7 @@ YACH is offers a more convenient way
 ```python
 # Option 3, use yach!
 import torch
-from yach import configurable, _C, Node
+from yach import configurable, _C
 
 # ----------------------------------------------------------------
 
@@ -119,7 +119,7 @@ Training script
 ```python
 import torch
 from torchvision.models import resnet50
-from yach import configurable, _C
+from yach import configurable, _C, Node
 
 # register module
 configurable('torchvision.resnet50').register(resnet50)
