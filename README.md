@@ -48,7 +48,7 @@ _C.Model1.output_channels = 2
 
 # register module with specific scope
 
-@configurable().register  # equal  @configurable('Model1').register
+@configurable().register  # equal  @configurable(scope='Model1').register
 class Model1(torch.nn.Module):
     def __init__(self, input_channels, output_channels):
         super().__init__()
@@ -65,7 +65,7 @@ _C.l1.output_channels = 2
 _C.l2.input_channels = 3
 _C.l2.output_channels = 4
 
-# register module with unbind prefix
+# register module with unbind scope
 
 @configurable(configurable.UNBIND).register
 class Model2(torch.nn.Module):
