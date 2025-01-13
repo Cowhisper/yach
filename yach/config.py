@@ -228,10 +228,15 @@ class configurable:
             dkwargs.update(kwargs)
             return func(**dkwargs)
         return wrapper
+    
+    def cli(self, func):
+        merge_from_sys_argv(verbose=True)
+        return self(func)
 
 
-def merge_from_sys_argv(cfg=None):
+def merge_from_sys_argv(cfg=None, verbose=False):
     cfg = _C if cfg is None else cfg
+    param = {}
     for arg in sys.argv[1:]:
         if '=' in arg:
             k, v = arg.split('=')
@@ -239,4 +244,8 @@ def merge_from_sys_argv(cfg=None):
                 v = eval(v)
             except:
                 pass
-            cfg[k] = v
+            cfg.set(k, v)
+            param[k] = v
+
+    if verbose:
+        print('merge argv: {}'.format(param))

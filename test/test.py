@@ -159,3 +159,20 @@ def test_build():
     CFG.ExampleClass3.b = 2
     ec = ExampleClass3()
     ec = ExampleClass3(3, b=4)
+
+
+def test_cli():
+    sys.argv = [sys.argv[0]]
+    sys.argv.append('test_func.a=1')
+    sys.argv.append('test_func.b=test')
+    sys.argv.append('test_func.c=True')
+    merge_from_sys_argv()
+
+    @configurable('test_func').cli
+    @configurable('test_func').register
+    def test_func(a, b='hello', c=False):
+        assert a == 1
+        assert b == 'test'
+        assert c is True
+
+    test_func()
