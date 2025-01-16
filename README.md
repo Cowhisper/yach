@@ -164,3 +164,8 @@ if __name__ == '__main__':
 
     train()
 ```
+
+## Install
+```bash
+pip install yacrs
+```

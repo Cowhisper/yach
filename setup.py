@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name="yacr",  # Replace with your package name
+    name="yacrs",  # Replace with your package name
     version="0.0.1",
     author="Cowhisper",
     author_email="niu1187203155@gmail.com",
