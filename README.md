@@ -1,6 +1,6 @@
-# YACH: Yet Anothor Configuration system by Hinting
+# YACRS: Yet Anothor Configuration and Registration System
 
-## Why YACH?
+## Why YACRS?
 There are hundreds of configuration system package for python. `YACS` (by @rbgirshick) is a great one especially for DeepLearnig projects.
 Many famous projects' configuration system is based on `YACS`. Such as Detectron2, fvcore, etc. However, even if yasc is a handy and reliable
 configuration system, it still has some inconvenience. `YASC` keep all information in `CfgNode` which leads to an unsolved issue, how to gracefully
@@ -34,11 +34,11 @@ model = Model(
 model = Model.from_config(cfg)
 ```
 
-YACH is offers a more convenient way
+YACRS is offers a more convenient way
 ```python
-# Option 3, use yach!
+# Option 3, use yacr!
 import torch
-from yach import configurable, _C
+from yacrs import configurable, _C
 
 # ----------------------------------------------------------------
 
@@ -119,7 +119,7 @@ Training script
 ```python
 import torch
 from torchvision.models import resnet50
-from yach import configurable, _C, Node
+from yacrs import configurable, _C, Node
 
 # register module
 configurable('torchvision.resnet50').register(resnet50)

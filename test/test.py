@@ -2,8 +2,8 @@ import pytest
 import sys
 sys.path.append('.')
 print(sys.path)
-from yach.config import Node, configurable, merge_from_sys_argv
-from yach.config import _C as CFG
+from yacrs.config import Node, configurable, merge_from_sys_argv
+from yacrs.config import _C as CFG
 
 
 # write pytest test case of XCfgNode
